@@ -14,6 +14,15 @@ struct ClaudeSessionsMenubarApp: App {
             MenuBarLabel(status: store.worstStatus)
         }
         .menuBarExtraStyle(.window)
+
+        // Separate Window scene for add/remove/edit/toggle, opened from the
+        // popover via @Environment(\.openWindow). Not shown by default.
+        Window("Servers", id: "servers") {
+            ServersWindow()
+                .environmentObject(store)
+        }
+        .defaultSize(width: 600, height: 420)
+        .windowResizability(.contentSize)
     }
 }
 
@@ -45,6 +54,8 @@ struct MenuBarLabel: View {
 
 struct ContentView: View {
     @EnvironmentObject private var store: SessionsStore
+    @Environment(\.openWindow) private var openWindow
+    @TerminalPreference private var preferredTerminal: Terminal
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -64,16 +75,16 @@ struct ContentView: View {
 
             Spacer(minLength: 4)
             HStack {
+                Button("Open TUI") { TUILauncher.openTUI(in: preferredTerminal) }
+                    .keyboardShortcut(.return)
                 Button("Refresh") { store.refresh() }
-                Button("Manage Servers…") {
-                    // TODO: separate Window scene for add/remove/edit
-                }
+                Button("Manage…") { openWindow(id: "servers") }
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }
             }
         }
         .padding()
-        .frame(width: 340, height: max(180, CGFloat(120 + 28 * (1 + store.remotes.count))))
+        .frame(width: 340, height: max(200, CGFloat(140 + 28 * (1 + store.remotes.count))))
     }
 
     private var summary: String {
