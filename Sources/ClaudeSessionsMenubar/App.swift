@@ -4,12 +4,14 @@ import AppKit
 @main
 struct ClaudeSessionsMenubarApp: App {
     @NSApplicationDelegateAdaptor private var delegate: AppDelegate
+    @StateObject private var store = SessionsStore()
 
     var body: some Scene {
         MenuBarExtra {
             ContentView()
+                .environmentObject(store)
         } label: {
-            Image(systemName: "person.fill")
+            MenuBarLabel(status: store.worstStatus)
         }
         .menuBarExtraStyle(.window)
     }
@@ -23,47 +25,123 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-struct ContentView: View {
-    @State private var servers: [ServerConfig] = []
+/// The menubar glyph itself. Shape changes with the worst session status so
+/// users can tell at a glance whether anything needs attention. We avoid
+/// pure-color signaling because template images are recolored by macOS.
+struct MenuBarLabel: View {
+    let status: SessionStatus
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Claude Sessions")
-                .font(.headline)
-            Divider()
-            if servers.isEmpty {
-                Text("No servers configured.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(servers) { s in
-                    HStack {
-                        Image(systemName: s.enable ? "circle.fill" : "circle")
-                            .foregroundStyle(s.enable ? .green : .secondary)
-                            .font(.system(size: 8))
-                        Text(s.name)
-                        Spacer()
-                        Text("\(s.host):\(s.port)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            Spacer()
+        switch status {
+        case .waiting:
+            Image(systemName: "exclamationmark.circle.fill")
+        case .busy:
+            Image(systemName: "circle.dotted.circle")
+        case .idle:
+            Image(systemName: "person.fill")
+        }
+    }
+}
+
+struct ContentView: View {
+    @EnvironmentObject private var store: SessionsStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
+                Text("Claude Sessions").font(.headline)
+                Spacer()
+                Text(summary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Divider()
+
+            HostRow(state: store.local, isLocal: true)
+            ForEach(store.remotes) { state in
+                HostRow(state: state, isLocal: false)
+            }
+
+            Spacer(minLength: 4)
+            HStack {
+                Button("Refresh") { store.refresh() }
                 Button("Manage Servers…") {
-                    // TODO: open a Window scene for add/remove/edit
+                    // TODO: separate Window scene for add/remove/edit
                 }
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }
             }
         }
         .padding()
-        .frame(width: 280, height: 220)
-        .task { reload() }
+        .frame(width: 340, height: max(180, CGFloat(120 + 28 * (1 + store.remotes.count))))
     }
 
-    private func reload() {
-        servers = (try? ServersConfig.load()) ?? []
+    private var summary: String {
+        let n = store.totalSessions
+        return n == 1 ? "1 session" : "\(n) sessions"
+    }
+}
+
+private struct HostRow: View {
+    let state: HostState
+    let isLocal: Bool
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            statusDot
+            Text(state.name)
+                .font(.body)
+                .foregroundStyle(isLocal ? .primary : .primary)
+            Spacer()
+            detail
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+    }
+
+    private var statusDot: some View {
+        let color: Color = {
+            if state.error != nil { return .gray }
+            switch state.worstStatus {
+            case .waiting: return .red
+            case .busy:    return .yellow
+            case .idle:    return .green
+            }
+        }()
+        return Circle().fill(color).frame(width: 8, height: 8)
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        if let err = state.error {
+            if isLocal, err.contains("server not running") || err.contains("no token") {
+                Text("local server not running")
+            } else {
+                Text(err)
+            }
+        } else if state.sessions.isEmpty && state.loading {
+            Text("loading…")
+        } else if state.sessions.isEmpty {
+            Text("no sessions")
+        } else {
+            Text(counts)
+        }
+    }
+
+    /// "3 idle · 1 waiting · 2 busy" — only includes non-zero buckets.
+    private var counts: String {
+        var waiting = 0, busy = 0, idle = 0
+        for s in state.sessions {
+            if !s.waitingFor.isEmpty { waiting += 1 }
+            else if s.status == "busy" { busy += 1 }
+            else { idle += 1 }
+        }
+        var parts: [String] = []
+        if waiting > 0 { parts.append("\(waiting) waiting") }
+        if busy > 0    { parts.append("\(busy) busy") }
+        if idle > 0    { parts.append("\(idle) idle") }
+        return parts.joined(separator: " · ")
     }
 }
