@@ -12,6 +12,14 @@ final class SessionsStore: ObservableObject {
     private let interval: TimeInterval
     private var pollTask: Task<Void, Never>?
 
+    /// Keys ("host:pid") of sessions that were already in a waiting state on
+    /// the previous tick. Used to fire notifications only on *transitions*
+    /// into waiting — not for every tick that finds a session still waiting.
+    private var prevWaitingKeys: Set<String> = []
+    /// Suppresses notifications on the very first tick so we don't spam the
+    /// user with one popup per currently-waiting session at app launch.
+    private var transitionTrackingPrimed = false
+
     init(interval: TimeInterval = 2) {
         self.interval = interval
         start()
@@ -79,6 +87,43 @@ final class SessionsStore: ObservableObject {
 
         self.local = await localResult
         self.remotes = await remoteResults
+
+        detectWaitingTransitions()
+    }
+
+    /// Diffs the current waiting-session set against the previous tick and
+    /// fires a notification for each *newly* waiting session. Identifiers
+    /// are stable per (host, pid) so the same waiting state doesn't notify
+    /// twice if it's still waiting on the next tick.
+    private func detectWaitingTransitions() {
+        struct Hit { let host: String; let session: Session }
+        var hits: [Hit] = []
+        for s in local.sessions where !s.waitingFor.isEmpty {
+            hits.append(Hit(host: local.name, session: s))
+        }
+        for r in remotes {
+            for s in r.sessions where !s.waitingFor.isEmpty {
+                hits.append(Hit(host: r.name, session: s))
+            }
+        }
+        let currKeys = Set(hits.map { "\($0.host):\($0.session.id)" })
+
+        if transitionTrackingPrimed {
+            let newly = currKeys.subtracting(prevWaitingKeys)
+            for hit in hits where newly.contains("\(hit.host):\(hit.session.id)") {
+                let title = hit.session.name.isEmpty
+                    ? "session \(hit.session.pid)"
+                    : hit.session.name
+                NotificationManager.shared.notifyWaiting(
+                    host: hit.host,
+                    sessionTitle: title,
+                    waitingFor: hit.session.waitingFor,
+                    identifier: "claude-waiting-\(hit.host)-\(hit.session.id)"
+                )
+            }
+        }
+        prevWaitingKeys = currKeys
+        transitionTrackingPrimed = true
     }
 
     private func fetchLocal() async -> HostState {

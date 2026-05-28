@@ -4,7 +4,15 @@ macOS menubar companion for [claude-sessions](https://github.com/rainder/claude-
 
 ## Status
 
-Skeleton. The `MenuBarExtra` icon renders, the popover lists configured servers, and the YAML parser round-trips. Not yet built: `/sessions` polling, the manage-servers window, notifications for `waiting:permission`, "open TUI" terminal launcher.
+Functional but unbundled. Works when run via `swift run`:
+
+- Menubar icon shifts shape with the worst session status across all hosts (idle / busy / waiting).
+- Popover shows one row per host (local + every enabled remote) with colored status dot and `N waiting · N busy · N idle` breakdown.
+- **Open TUI** button launches your preferred terminal (Terminal.app, iTerm, Ghostty — settable in the Manage window).
+- **Manage…** opens a separate window for add/remove/edit/toggle with full `servers.yaml` round-trip (including `enable: false`).
+- **Notifications** fire when a session transitions into `waiting:permission`. Requires the app to be packaged as a proper `.app` bundle with a `CFBundleIdentifier`; under `swift run` authorization fails silently and notifications won't appear.
+
+Not yet built: proper `.app` bundle + signing + DMG for distribution; per-server "Open TUI scoped to host"; on-screen overlay (the WireGuard-style menubar-and-popover covers the core flow already).
 
 ## Build / run
 

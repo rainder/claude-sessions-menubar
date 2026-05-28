@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // executables that don't ship a bundle. Hides from Dock + Cmd-Tab.
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        Task { await NotificationManager.shared.requestAuthorization() }
     }
 }
 
