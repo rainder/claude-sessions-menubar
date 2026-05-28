@@ -19,6 +19,15 @@ final class NotificationManager {
     private init() {}
 
     func requestAuthorization() async {
+        // Even *accessing* UNUserNotificationCenter.current() throws an
+        // uncaught NSException when the executable doesn't ship a bundle
+        // with a CFBundleIdentifier (e.g. running via `swift run`). Bail
+        // before touching it so dev runs don't crash on launch.
+        guard Bundle.main.bundleIdentifier != nil else {
+            NSLog("notifications disabled: no bundle identifier (unbundled swift run)")
+            authorized = false
+            return
+        }
         do {
             authorized = try await UNUserNotificationCenter.current()
                 .requestAuthorization(options: [.alert, .sound])
@@ -29,7 +38,7 @@ final class NotificationManager {
     }
 
     func notifyWaiting(host: String, sessionTitle: String, waitingFor: String, identifier: String) {
-        guard authorized else { return }
+        guard authorized, Bundle.main.bundleIdentifier != nil else { return }
         let content = UNMutableNotificationContent()
         content.title = "Claude needs you · \(host)"
         content.body = waitingFor.isEmpty
