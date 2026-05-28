@@ -11,7 +11,7 @@ struct ClaudeSessionsMenubarApp: App {
             ContentView()
                 .environmentObject(store)
         } label: {
-            MenuBarLabel(status: store.worstStatus)
+            MenuBarLabel(counts: store.counts)
         }
         .menuBarExtraStyle(.window)
 
@@ -27,28 +27,63 @@ struct ClaudeSessionsMenubarApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var sigusr1Source: DispatchSourceSignal?
+
     // Equivalent to LSUIElement=YES in Info.plist, but works for SPM-built
     // executables that don't ship a bundle. Hides from Dock + Cmd-Tab.
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         Task { await NotificationManager.shared.requestAuthorization() }
+        installTestSignalHandler()
+    }
+
+    /// `kill -USR1 <pid>` shows a synthetic Clippy prompt. Handy for tuning
+    /// the overlay's look without producing a real waiting session.
+    private func installTestSignalHandler() {
+        signal(SIGUSR1, SIG_IGN)
+        let src = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
+        src.setEventHandler {
+            Task { @MainActor in OverlayController.shared.showTestPrompt() }
+        }
+        src.resume()
+        sigusr1Source = src
     }
 }
 
-/// The menubar glyph itself. Shape changes with the worst session status so
-/// users can tell at a glance whether anything needs attention. We avoid
-/// pure-color signaling because template images are recolored by macOS.
+/// The menubar label: per-state count badges so you can see at a glance
+/// "1 waiting, 3 idle" without opening the popover. Each non-zero bucket
+/// gets a shape (not just color) so the signal survives template-image
+/// rendering on monochrome menubars. Buckets are ordered by urgency:
+/// waiting (loud) → busy (neutral) → idle (dim).
 struct MenuBarLabel: View {
-    let status: SessionStatus
+    let counts: SessionCounts
 
     var body: some View {
-        switch status {
-        case .waiting:
-            Image(systemName: "exclamationmark.circle.fill")
-        case .busy:
-            Image(systemName: "circle.dotted.circle")
-        case .idle:
-            Image(systemName: "person.fill")
+        HStack(spacing: 4) {
+            if counts.total == 0 {
+                Image(systemName: "person")
+                    .foregroundStyle(.secondary)
+            }
+            if counts.waiting > 0 {
+                bucket(symbol: "exclamationmark.circle.fill", count: counts.waiting)
+                    .foregroundStyle(.red)
+            }
+            if counts.busy > 0 {
+                bucket(symbol: "circle.fill", count: counts.busy)
+                    .imageScale(.small)
+            }
+            if counts.idle > 0 {
+                bucket(symbol: "circle", count: counts.idle)
+                    .imageScale(.small)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func bucket(symbol: String, count: Int) -> some View {
+        HStack(spacing: 2) {
+            Image(systemName: symbol)
+            Text("\(count)")
         }
     }
 }

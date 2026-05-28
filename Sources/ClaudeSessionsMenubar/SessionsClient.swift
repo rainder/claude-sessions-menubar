@@ -48,6 +48,21 @@ enum SessionStatus: Int, Comparable {
     static func < (lhs: SessionStatus, rhs: SessionStatus) -> Bool { lhs.rawValue < rhs.rawValue }
 }
 
+/// Aggregate counts shown in the menubar (and reused in popover summaries).
+struct SessionCounts {
+    var waiting: Int = 0
+    var busy: Int = 0
+    var idle: Int = 0
+
+    var total: Int { waiting + busy + idle }
+
+    mutating func bump(_ s: Session) {
+        if !s.waitingFor.isEmpty { waiting += 1 }
+        else if s.status == "busy" { busy += 1 }
+        else { idle += 1 }
+    }
+}
+
 enum ClientError: Error, CustomStringConvertible {
     case noLocalToken
     case connectionRefused

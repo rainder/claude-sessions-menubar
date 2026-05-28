@@ -56,6 +56,16 @@ final class SessionsStore: ObservableObject {
         local.sessions.count + remotes.reduce(0) { $0 + $1.sessions.count }
     }
 
+    /// Breakdown of every session across every host, bucketed by status.
+    /// Drives the menubar's count badges so you can see "1 waiting, 3 idle"
+    /// without opening the popover.
+    var counts: SessionCounts {
+        var c = SessionCounts()
+        for s in local.sessions { c.bump(s) }
+        for r in remotes { for s in r.sessions { c.bump(s) } }
+        return c
+    }
+
     private func tick() async {
         let cfgs = (try? ServersConfig.load()) ?? []
         let enabled = cfgs.filter { $0.enable }
@@ -110,7 +120,9 @@ final class SessionsStore: ObservableObject {
 
         if transitionTrackingPrimed {
             let newly = currKeys.subtracting(prevWaitingKeys)
+            let exited = prevWaitingKeys.subtracting(currKeys)
             for hit in hits where newly.contains("\(hit.host):\(hit.session.id)") {
+                let key = "\(hit.host):\(hit.session.id)"
                 let title = hit.session.name.isEmpty
                     ? "session \(hit.session.pid)"
                     : hit.session.name
@@ -118,8 +130,19 @@ final class SessionsStore: ObservableObject {
                     host: hit.host,
                     sessionTitle: title,
                     waitingFor: hit.session.waitingFor,
-                    identifier: "claude-waiting-\(hit.host)-\(hit.session.id)"
+                    identifier: "claude-waiting-\(key)"
                 )
+                OverlayController.shared.showIfEnabled(WaitingPrompt(
+                    id: key,
+                    host: hit.host,
+                    sessionTitle: title,
+                    waitingFor: hit.session.waitingFor
+                ))
+            }
+            // If Clippy is showing for a session that's no longer waiting
+            // (user responded, session died), close him quietly.
+            for key in exited {
+                OverlayController.shared.dismissIfMatches(key)
             }
         }
         prevWaitingKeys = currKeys

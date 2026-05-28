@@ -6,6 +6,7 @@ import SwiftUI
 struct ServersWindow: View {
     @StateObject private var editor = ServersEditor()
     @TerminalPreference private var preferredTerminal: Terminal
+    @AppStorage("clippyEnabled") private var clippyEnabled: Bool = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,18 +44,36 @@ struct ServersWindow: View {
 
             Divider()
 
-            HStack {
-                Text("Open TUI in:").font(.subheadline)
-                Picker("Terminal", selection: $preferredTerminal) {
-                    ForEach(Terminal.allCases) { t in
-                        Text(t.displayName).tag(t)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Open TUI in:").font(.subheadline)
+                    Picker("Terminal", selection: $preferredTerminal) {
+                        ForEach(Terminal.allCases) { t in
+                            Text(t.displayName).tag(t)
+                        }
                     }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(maxWidth: 160)
+                    Spacer()
+                    Text("\(editor.rows.count) configured").font(.caption).foregroundStyle(.secondary)
                 }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(maxWidth: 160)
-                Spacer()
-                Text("\(editor.rows.count) configured").font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Toggle("Show Clippy overlay when a session needs attention", isOn: $clippyEnabled)
+                        .toggleStyle(.checkbox)
+                        .font(.subheadline)
+                    Spacer()
+                    Button("Test Clippy") {
+                        OverlayController.shared.showIfEnabled(WaitingPrompt(
+                            id: "preview:0",
+                            host: "preview",
+                            sessionTitle: "aero-doc-flow",
+                            waitingFor: "permission prompt"
+                        ))
+                    }
+                    .controlSize(.small)
+                    .disabled(!clippyEnabled)
+                }
             }
             .padding()
         }
